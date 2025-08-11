@@ -1,0 +1,141 @@
+{
+  "call_overview": {
+    "agent": {
+      "name": "Alex Thompson",
+      "type": "Human Agent"
+    },
+    "customer": {
+      "name": "Sandra Miller",
+      "type": "Customer Support"
+    },
+    "date_time": {
+      "date": "2024-01-15",
+      "time": "16:45"
+    },
+    "duration": "8:23"
+  },
+  "performance_metrics": {
+    "quality_score": {
+      "score": "67%",
+      "target": "85%",
+      "variance": "-18.0% below target"
+    },
+    "sentiment_score": {
+      "score": "2.1/5",
+      "target": "4.0/5",
+      "status": "Below expected"
+    },
+    "issues_identified": {
+      "count": 4,
+      "type": "Critical Issues"
+    }
+  },
+  "identified_issues": [
+    "Agent failed to follow escalation procedure",
+    "High negative sentiment detected",
+    "Customer became increasingly frustrated",
+    "Lack of empathy in customer interaction"
+  ],
+  "call_transcript": {
+    "full_text": "Hello, this is Alex from customer support. How can I help you today? Hi Alex, I'm Sandra Miller and I'm really frustrated with my recent order. I've been trying to get this resolved for over a week now and nobody seems to be able to help me. I understand you're frustrated Sandra. Let me look into your account. Can you provide me with your order number? Yes, it's #12345. I've already given this to three other agents and nothing has been done. I see the order here. It looks like there was a shipping delay. Well that's not good enough! I need this resolved today or I want to speak to your manager. I'm not authorized to do that right now. Let me see what other options we have. This is ridiculous! I've been a customer for 5 years and this is how you treat me?",
+    "summary": "Agent failed to follow escalation procedure, customer became increasingly frustrated.",
+    "sentiment_analysis": [
+      {
+        "text": "Hello, this is Alex from customer support. How can I help you today?",
+        "sentiment": "neutral",
+        "confidence": 0.85
+      },
+      {
+        "text": "Hi Alex, I'm Sandra Miller and I'm really frustrated with my recent order.",
+        "sentiment": "negative",
+        "confidence": 0.92
+      },
+      {
+        "text": "I've been trying to get this resolved for over a week now and nobody seems to be able to help me.",
+        "sentiment": "negative",
+        "confidence": 0.95
+      },
+      {
+        "text": "I understand you're frustrated Sandra. Let me look into your account.",
+        "sentiment": "neutral",
+        "confidence": 0.78
+      },
+      {
+        "text": "Well that's not good enough! I need this resolved today or I want to speak to your manager.",
+        "sentiment": "negative",
+        "confidence": 0.98
+      },
+      {
+        "text": "I'm not authorized to do that right now. Let me see what other options we have.",
+        "sentiment": "neutral",
+        "confidence": 0.82
+      },
+      {
+        "text": "This is ridiculous! I've been a customer for 5 years and this is how you treat me?",
+        "sentiment": "negative",
+        "confidence": 0.99
+      }
+    ]
+  },
+  "raw_data": {
+    "transcript_id": "abc123def456",
+    "audio_duration_ms": 503000,
+    "confidence": 0.89,
+    "speaker_labels": [
+      {
+        "speaker": "A",
+        "text": "Hello, this is Alex from customer support. How can I help you today?",
+        "start": 0,
+        "end": 3500
+      },
+      {
+        "speaker": "B", 
+        "text": "Hi Alex, I'm Sandra Miller and I'm really frustrated with my recent order.",
+        "start": 3600,
+        "end": 8200
+      },
+      {
+        "speaker": "B",
+        "text": "I've been trying to get this resolved for over a week now and nobody seems to be able to help me.",
+        "start": 8300,
+        "end": 14500
+      },
+      {
+        "speaker": "A",
+        "text": "I understand you're frustrated Sandra. Let me look into your account. Can you provide me with your order number?",
+        "start": 14600,
+        "end": 21200
+      },
+      {
+        "speaker": "B",
+        "text": "Yes, it's #12345. I've already given this to three other agents and nothing has been done.",
+        "start": 21300,
+        "end": 27800
+      },
+      {
+        "speaker": "A",
+        "text": "I see the order here. It looks like there was a shipping delay.",
+        "start": 27900,
+        "end": 32500
+      },
+      {
+        "speaker": "B",
+        "text": "Well that's not good enough! I need this resolved today or I want to speak to your manager.",
+        "start": 32600,
+        "end": 39200
+      },
+      {
+        "speaker": "A",
+        "text": "I'm not authorized to do that right now. Let me see what other options we have.",
+        "start": 39300,
+        "end": 45800
+      },
+      {
+        "speaker": "B",
+        "text": "This is ridiculous! I've been a customer for 5 years and this is how you treat me?",
+        "start": 45900,
+        "end": 52200
+      }
+    ]
+  }
+}

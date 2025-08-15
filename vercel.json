@@ -16,7 +16,9 @@
       "dest": "fastapi_app/main.py"
     }
   ],
-  "env": {
-    "PYTHONPATH": "fastapi_app"
+  "functions": {
+    "fastapi_app/main.py": {
+      "includeFiles": "fastapi_app/**"
+    }
   }
 }

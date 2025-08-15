@@ -6,8 +6,5 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 fastapi_dir = os.path.join(current_dir, 'fastapi_app')
 sys.path.insert(0, fastapi_dir)
 
-# Change working directory to fastapi_app so relative imports work
-os.chdir(fastapi_dir)
-
-# Now import the FastAPI app
-from main import app
+# Now import the FastAPI app from the package module
+from fastapi_app.main import app

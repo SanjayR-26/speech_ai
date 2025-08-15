@@ -18,10 +18,5 @@
   ],
   "env": {
     "PYTHONPATH": "fastapi_app"
-  },
-  "functions": {
-    "fastapi_app/main.py": {
-      "maxDuration": 60
-    }
   }
 }

@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "fastapi_app/main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "fastapi_app/main.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "fastapi_app/main.py"
+    }
+  ],
+  "env": {
+    "PYTHONPATH": "fastapi_app"
+  },
+  "functions": {
+    "fastapi_app/main.py": {
+      "maxDuration": 60
+    }
+  }
+}

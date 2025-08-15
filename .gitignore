@@ -1,1 +1,21 @@
-/.env
+# Python specific ignores
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.env
+*.venv
+.env.local
+.idea/
+.vscode/
+*.db
+*.sqlite3
+*.log
+*.pytest_cache/
+*.coverage
+*.mypy_cache/
+*.pylint.d/
+dist/
+build/
+

@@ -98,12 +98,50 @@ def _remap_segment_speakers(transcription: Dict[str, Any]) -> None:
                 return norm_map.get(letter.upper()) or None
         return None
 
-    for seg in segments:
+    def is_overlap_label(label: Any) -> bool:
+        if not isinstance(label, str):
+            return False
+        s = label.strip().lower()
+        if s in ("c", "d", "speaker c", "speaker d", "speakerc", "speakerd"):
+            return True
+        if s.startswith("speaker "):
+            letter = s.split(" ")[-1]
+            return letter in ("c", "d")
+        return False
+
+    def find_next_definitive_role(start_index: int) -> str | None:
+        # look ahead for the next segment that maps cleanly to Agent/Customer via A/B or explicit
+        for j in range(start_index + 1, len(segments)):
+            nxt = segments[j]
+            if not isinstance(nxt, dict):
+                continue
+            role = normalize_speaker_label(nxt.get("speaker"))
+            if role in ("Agent", "Customer"):
+                return role
+        return None
+
+    for i, seg in enumerate(segments):
         if not isinstance(seg, dict):
             continue
-        desired = normalize_speaker_label(seg.get("speaker"))
+        label = seg.get("speaker")
+        desired = normalize_speaker_label(label)
         if desired in ("Agent", "Customer"):
             seg["speaker"] = desired
+            continue
+        # Handle overlap labels like Speaker C/D by assigning role of the next definitive segment
+        if is_overlap_label(label):
+            next_role = find_next_definitive_role(i)
+            if next_role in ("Agent", "Customer"):
+                seg["speaker"] = next_role
+                # Mark as overlap for downstream consumers (non-breaking; optional)
+                try:
+                    # keep key simple and boolean
+                    if "overlap" not in seg:
+                        seg["overlap"] = True
+                    if "overlapFrom" not in seg:
+                        seg["overlapFrom"] = next_role
+                except Exception:
+                    pass
 
 
 @app.on_event("startup")

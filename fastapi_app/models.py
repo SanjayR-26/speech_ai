@@ -52,6 +52,9 @@ class TranscriptionSegment(BaseModel):
     end: float = Field(..., description="End in seconds")
     confidence: Optional[float] = None
     sentiment: Optional[Sentiment] = None
+    # Overlap flags derived during normalization in _remap_segment_speakers()
+    overlap: Optional[bool] = None
+    overlap_from: Optional[str] = Field(None, alias="overlapFrom")
 
 
 class Chapter(BaseModel):

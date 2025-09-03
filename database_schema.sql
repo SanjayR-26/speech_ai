@@ -441,7 +441,14 @@ CREATE TABLE IF NOT EXISTS call_analyses (
     transcription_id UUID NOT NULL,
     analysis_provider VARCHAR(50) DEFAULT 'openai', -- 'openai', 'anthropic', 'llama'
     model_version VARCHAR(50), -- 'gpt-4', 'gpt-3.5', 'claude-2', etc.
-    overall_score NUMERIC(5, 2), -- 0-100
+    total_points_earned NUMERIC(5, 2), -- Total points earned
+    total_max_points INTEGER, -- Total maximum possible points
+    overall_score NUMERIC(5, 2) GENERATED ALWAYS AS (CASE WHEN total_max_points > 0 THEN (total_points_earned / total_max_points * 100) ELSE 0 END) STORED, -- 0-100 percentage
+    performance_category VARCHAR(50), -- 'excellent', 'good', 'needs_improvement', 'poor'
+    summary TEXT, -- AI-generated summary of the call
+    speaker_mapping JSONB, -- {"A": "Agent", "B": "Customer"} mapping
+    agent_label VARCHAR(10), -- 'A' or 'B' - which speaker is the agent
+    raw_analysis_response JSONB, -- Complete raw response from AI provider
     status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed'
     processing_time_ms INTEGER,
     error_message TEXT,
@@ -459,32 +466,54 @@ CREATE INDEX idx_analyses_call ON call_analyses(call_id);
 CREATE INDEX idx_analyses_organization ON call_analyses(organization_id);
 CREATE INDEX idx_analyses_score ON call_analyses(overall_score);
 
--- Evaluation Criteria
-CREATE TABLE IF NOT EXISTS evaluation_criteria (
+-- Default Evaluation Criteria (System-wide defaults)
+CREATE TABLE IF NOT EXISTS default_evaluation_criteria (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    organization_id UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     category VARCHAR(100), -- 'communication', 'technical', 'compliance', 'soft_skills'
-    weight NUMERIC(5, 2) DEFAULT 1.0, -- Weight in scoring
+    default_points INTEGER DEFAULT 20, -- Default points for this criterion
+    is_system BOOLEAN DEFAULT true, -- System criteria cannot be deleted
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Organization-specific Evaluation Criteria
+CREATE TABLE IF NOT EXISTS evaluation_criteria (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID NOT NULL,
+    default_criterion_id UUID, -- Links to default criteria if based on system default
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    category VARCHAR(100), -- 'communication', 'technical', 'compliance', 'soft_skills'
+    max_points INTEGER NOT NULL DEFAULT 20, -- Maximum points for this criterion
     is_active BOOLEAN DEFAULT true,
+    is_custom BOOLEAN DEFAULT false, -- True if company created, false if from defaults
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT evaluation_criteria_organization_fkey FOREIGN KEY (organization_id)
-        REFERENCES organizations(id) ON DELETE CASCADE
+        REFERENCES organizations(id) ON DELETE CASCADE,
+    CONSTRAINT evaluation_criteria_default_fkey FOREIGN KEY (default_criterion_id)
+        REFERENCES default_evaluation_criteria(id) ON DELETE SET NULL
 );
+
+CREATE INDEX idx_default_criteria_category ON default_evaluation_criteria(category);
+CREATE INDEX idx_default_criteria_system ON default_evaluation_criteria(is_system);
 
 CREATE INDEX idx_criteria_organization ON evaluation_criteria(organization_id);
 CREATE INDEX idx_criteria_category ON evaluation_criteria(category);
+CREATE INDEX idx_criteria_default ON evaluation_criteria(default_criterion_id);
 
 -- Evaluation Scores (Per criterion)
 CREATE TABLE IF NOT EXISTS evaluation_scores (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     analysis_id UUID NOT NULL,
     criterion_id UUID NOT NULL,
-    score NUMERIC(5, 2) NOT NULL, -- 0-100 or 0-20 based on criterion
+    points_earned NUMERIC(5, 2) NOT NULL, -- Points earned out of max_points
+    max_points INTEGER NOT NULL, -- Maximum possible points for this criterion
+    percentage_score NUMERIC(5, 2) GENERATED ALWAYS AS (CASE WHEN max_points > 0 THEN (points_earned / max_points * 100) ELSE 0 END) STORED,
     justification TEXT,
     supporting_evidence JSONB, -- References to specific segments
+    timestamp_references JSONB, -- Specific timestamps in the call
     CONSTRAINT evaluation_scores_analysis_fkey FOREIGN KEY (analysis_id)
         REFERENCES call_analyses(id) ON DELETE CASCADE,
     CONSTRAINT evaluation_scores_criterion_fkey FOREIGN KEY (criterion_id)
@@ -503,15 +532,52 @@ CREATE TABLE IF NOT EXISTS analysis_insights (
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     severity VARCHAR(20), -- 'low', 'medium', 'high', 'critical'
-    segment_references JSONB, -- References to specific segments
+    segment_references JSONB, -- References to specific segments with speaker, text, start, end
     suggested_action TEXT,
+    improved_response_example TEXT, -- Specific example of how to improve
+    criterion_id UUID, -- Links to specific evaluation criterion if applicable
+    sequence_order INTEGER, -- Order for display purposes
     CONSTRAINT analysis_insights_analysis_fkey FOREIGN KEY (analysis_id)
-        REFERENCES call_analyses(id) ON DELETE CASCADE
+        REFERENCES call_analyses(id) ON DELETE CASCADE,
+    CONSTRAINT analysis_insights_criterion_fkey FOREIGN KEY (criterion_id)
+        REFERENCES evaluation_criteria(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_insights_analysis ON analysis_insights(analysis_id);
 CREATE INDEX idx_insights_type ON analysis_insights(insight_type);
 CREATE INDEX idx_insights_severity ON analysis_insights(severity);
+CREATE INDEX idx_insights_criterion ON analysis_insights(criterion_id);
+
+-- Customer Behavior Analysis
+CREATE TABLE IF NOT EXISTS customer_behavior (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    call_id UUID NOT NULL,
+    analysis_id UUID NOT NULL,
+    customer_id UUID,
+    behavior_type VARCHAR(100), -- 'frustrated', 'satisfied', 'confused', 'angry', 'appreciative'
+    intensity_level VARCHAR(20), -- 'low', 'medium', 'high'
+    emotional_state VARCHAR(50), -- 'calm', 'agitated', 'happy', 'upset', 'neutral'
+    patience_level INTEGER CHECK (patience_level BETWEEN 1 AND 10), -- 1-10 scale
+    cooperation_level INTEGER CHECK (cooperation_level BETWEEN 1 AND 10), -- 1-10 scale
+    resolution_satisfaction VARCHAR(50), -- 'very_satisfied', 'satisfied', 'neutral', 'dissatisfied', 'very_dissatisfied'
+    key_concerns TEXT[], -- Array of main customer concerns
+    trigger_points JSONB, -- Moments that triggered emotional changes
+    interaction_quality_score INTEGER CHECK (interaction_quality_score BETWEEN 1 AND 100),
+    needs_followup BOOLEAN DEFAULT false,
+    followup_reason TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT customer_behavior_call_fkey FOREIGN KEY (call_id)
+        REFERENCES calls(id) ON DELETE CASCADE,
+    CONSTRAINT customer_behavior_analysis_fkey FOREIGN KEY (analysis_id)
+        REFERENCES call_analyses(id) ON DELETE CASCADE,
+    CONSTRAINT customer_behavior_customer_fkey FOREIGN KEY (customer_id)
+        REFERENCES customers(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_customer_behavior_call ON customer_behavior(call_id);
+CREATE INDEX idx_customer_behavior_analysis ON customer_behavior(analysis_id);
+CREATE INDEX idx_customer_behavior_type ON customer_behavior(behavior_type);
+CREATE INDEX idx_customer_behavior_followup ON customer_behavior(needs_followup) WHERE needs_followup = true;
 
 -- Sentiment Analysis
 CREATE TABLE IF NOT EXISTS sentiment_analyses (
@@ -635,6 +701,32 @@ CREATE INDEX idx_audit_user ON audit_logs(user_id);
 CREATE INDEX idx_audit_entity ON audit_logs(entity_type, entity_id);
 CREATE INDEX idx_audit_created ON audit_logs(created_at DESC);
 
+-- Contact Form Submissions
+CREATE TABLE IF NOT EXISTS contact_submissions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    email VARCHAR(256) NOT NULL,
+    company VARCHAR(255),
+    industry VARCHAR(100),
+    message TEXT NOT NULL,
+    source VARCHAR(50) DEFAULT 'website', -- 'website', 'landing_page', 'mobile_app'
+    ip_address INET,
+    user_agent TEXT,
+    referrer TEXT,
+    status VARCHAR(50) DEFAULT 'new', -- 'new', 'contacted', 'qualified', 'converted', 'archived'
+    assigned_to UUID, -- Sales/support person assigned
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    contacted_at TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT contact_submissions_assigned_fkey FOREIGN KEY (assigned_to)
+        REFERENCES user_profiles(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_contact_submissions_email ON contact_submissions(email);
+CREATE INDEX idx_contact_submissions_status ON contact_submissions(status);
+CREATE INDEX idx_contact_submissions_created ON contact_submissions(created_at DESC);
+
 -- =============================================
 -- PART 3: VIEWS FOR COMMON QUERIES
 -- =============================================
@@ -692,6 +784,116 @@ LEFT JOIN calls c ON c.agent_id = a.id
 LEFT JOIN call_analyses ca ON ca.call_id = c.id
 LEFT JOIN sentiment_analyses sa ON sa.call_id = c.id
 GROUP BY a.id, a.agent_code, up.first_name, up.last_name, up.email, t.name, d.name;
+
+-- Master View: QA Evaluation with Complete Details
+CREATE OR REPLACE VIEW v_qa_evaluation_master AS
+SELECT 
+    -- Call Information
+    c.id AS call_id,
+    c.organization_id,
+    c.call_sid,
+    c.direction,
+    c.call_type,
+    c.duration_seconds,
+    c.started_at,
+    c.ended_at,
+    
+    -- Agent Information
+    a.id AS agent_id,
+    a.agent_code,
+    up.first_name AS agent_first_name,
+    up.last_name AS agent_last_name,
+    up.email AS agent_email,
+    t.name AS team_name,
+    d.name AS department_name,
+    
+    -- Customer Information
+    cust.id AS customer_id,
+    cust.name AS customer_name,
+    cust.phone AS customer_phone,
+    cust.email AS customer_email,
+    
+    -- QA Analysis
+    ca.id AS analysis_id,
+    ca.total_points_earned,
+    ca.total_max_points,
+    ca.overall_score,
+    ca.performance_category,
+    ca.summary AS call_summary,
+    ca.analysis_provider,
+    ca.model_version,
+    
+    -- Customer Behavior
+    cb.behavior_type,
+    cb.emotional_state,
+    cb.patience_level,
+    cb.cooperation_level,
+    cb.resolution_satisfaction,
+    cb.interaction_quality_score,
+    cb.needs_followup,
+    cb.followup_reason,
+    
+    -- Sentiment Analysis
+    sa.overall_sentiment,
+    sa.agent_sentiment,
+    sa.customer_sentiment,
+    
+    -- Detailed Scores
+    JSONB_AGG(
+        DISTINCT JSONB_BUILD_OBJECT(
+            'criterion_name', ec.name,
+            'category', ec.category,
+            'points_earned', es.points_earned,
+            'max_points', es.max_points,
+            'percentage', es.percentage_score,
+            'justification', es.justification
+        ) ORDER BY ec.category, ec.name
+    ) FILTER (WHERE es.id IS NOT NULL) AS evaluation_details,
+    
+    -- Insights
+    JSONB_AGG(
+        DISTINCT JSONB_BUILD_OBJECT(
+            'type', ai.insight_type,
+            'category', ai.category,
+            'title', ai.title,
+            'description', ai.description,
+            'severity', ai.severity,
+            'suggested_action', ai.suggested_action
+        ) ORDER BY ai.severity DESC, ai.insight_type
+    ) FILTER (WHERE ai.id IS NOT NULL) AS insights,
+    
+    -- Key Concerns
+    cb.key_concerns,
+    
+    -- Timestamps
+    ca.created_at AS analysis_created_at,
+    ca.completed_at AS analysis_completed_at
+    
+FROM calls c
+JOIN agents a ON c.agent_id = a.id
+JOIN user_profiles up ON a.user_profile_id = up.id
+LEFT JOIN teams t ON up.team_id = t.id
+LEFT JOIN departments d ON up.department_id = d.id
+LEFT JOIN customers cust ON c.customer_id = cust.id
+LEFT JOIN call_analyses ca ON ca.call_id = c.id
+LEFT JOIN customer_behavior cb ON cb.call_id = c.id AND cb.analysis_id = ca.id
+LEFT JOIN sentiment_analyses sa ON sa.call_id = c.id
+LEFT JOIN evaluation_scores es ON es.analysis_id = ca.id
+LEFT JOIN evaluation_criteria ec ON es.criterion_id = ec.id
+LEFT JOIN analysis_insights ai ON ai.analysis_id = ca.id
+WHERE ca.status = 'completed'
+GROUP BY 
+    c.id, c.organization_id, c.call_sid, c.direction, c.call_type, 
+    c.duration_seconds, c.started_at, c.ended_at,
+    a.id, a.agent_code, up.first_name, up.last_name, up.email, t.name, d.name,
+    cust.id, cust.name, cust.phone, cust.email,
+    ca.id, ca.total_points_earned, ca.total_max_points, ca.overall_score,
+    ca.performance_category, ca.summary, ca.analysis_provider, ca.model_version,
+    cb.behavior_type, cb.emotional_state, cb.patience_level, cb.cooperation_level,
+    cb.resolution_satisfaction, cb.interaction_quality_score, cb.needs_followup,
+    cb.followup_reason, cb.key_concerns,
+    sa.overall_sentiment, sa.agent_sentiment, sa.customer_sentiment,
+    ca.created_at, ca.completed_at;
 
 -- =============================================
 -- PART 4: FUNCTIONS AND TRIGGERS
@@ -859,25 +1061,30 @@ INSERT INTO role_permissions (app_id, role, permission) VALUES
     ('public', 'viewer', 'view_reports')
 ON CONFLICT (app_id, role, permission) DO NOTHING;
 
--- Insert default evaluation criteria (can be customized per organization)
-INSERT INTO evaluation_criteria (organization_id, name, description, category, weight) 
+-- Insert system default evaluation criteria
+INSERT INTO default_evaluation_criteria (name, description, category, default_points, is_system) VALUES
+    ('Professionalism & Tone', 'Maintains professional demeanor throughout the call', 'communication', 20, true),
+    ('Active Listening & Empathy', 'Demonstrates understanding of customer needs', 'soft_skills', 20, true),
+    ('Problem Resolution', 'Effectively addresses and resolves customer issues', 'technical', 20, true),
+    ('Process Adherence', 'Follows company policies and procedures', 'compliance', 20, true),
+    ('Communication Clarity & Structure', 'Speaks clearly and provides accurate information', 'communication', 20, true)
+ON CONFLICT (name) DO NOTHING;
+
+-- Create default evaluation criteria for each organization based on system defaults
+INSERT INTO evaluation_criteria (organization_id, default_criterion_id, name, description, category, max_points, is_custom) 
 SELECT 
     o.id,
-    c.name,
-    c.description,
-    c.category,
-    c.weight
+    dc.id,
+    dc.name,
+    dc.description,
+    dc.category,
+    dc.default_points,
+    false
 FROM organizations o
-CROSS JOIN (VALUES
-    ('Professionalism & Tone', 'Maintains professional demeanor throughout the call', 'communication', 1.0),
-    ('Active Listening & Empathy', 'Demonstrates understanding of customer needs', 'soft_skills', 1.0),
-    ('Problem Resolution', 'Effectively addresses and resolves customer issues', 'technical', 1.0),
-    ('Process Adherence', 'Follows company policies and procedures', 'compliance', 1.0),
-    ('Communication Clarity', 'Speaks clearly and provides accurate information', 'communication', 1.0)
-) AS c(name, description, category, weight)
+CROSS JOIN default_evaluation_criteria dc
 WHERE NOT EXISTS (
     SELECT 1 FROM evaluation_criteria ec 
-    WHERE ec.organization_id = o.id AND ec.name = c.name
+    WHERE ec.organization_id = o.id AND ec.name = dc.name
 );
 
 -- =============================================
@@ -1408,6 +1615,174 @@ CREATE INDEX idx_realtime_metrics_analysis ON realtime_metrics(organization_id, 
 -- Partial indexes for common queries
 CREATE INDEX idx_active_assignments ON course_assignments(agent_id) WHERE status IN ('assigned', 'in_progress');
 CREATE INDEX idx_pending_alerts ON realtime_alerts(organization_id, severity) WHERE is_acknowledged = false;
+
+-- =============================================
+-- PART 13: UPLOADED FILES (LEGACY SUPPORT)
+-- =============================================
+-- This table structure supports the existing uploaded files format
+
+CREATE TABLE IF NOT EXISTS uploaded_files (
+    id TEXT PRIMARY KEY,
+    original_name TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    mime_type TEXT NOT NULL,
+    file_data TEXT NOT NULL, -- URL to file storage
+    metadata TEXT, -- JSON string
+    uploaded_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    agent JSONB NOT NULL DEFAULT jsonb_build_object('name', 'Unknown Agent'),
+    customer JSONB,
+    file JSONB NOT NULL DEFAULT '{}',
+    tags TEXT[] NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing', 'completed', 'error')),
+    error TEXT,
+    transcription JSONB NOT NULL DEFAULT jsonb_build_object('provider', 'assemblyai', 'text', ''),
+    metrics JSONB NOT NULL DEFAULT jsonb_build_object('wordCount', 0),
+    debug JSONB,
+    "userId" UUID,
+    "uploadedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+    user_id UUID DEFAULT auth.uid()
+);
+
+CREATE INDEX idx_uploaded_files_userid ON uploaded_files USING btree ("userId");
+CREATE INDEX idx_uploaded_files_status ON uploaded_files USING btree (status);
+CREATE INDEX idx_uploaded_files_uploaded_at ON uploaded_files USING btree (uploaded_at);
+CREATE INDEX idx_uploaded_files_agent_name ON uploaded_files USING btree ((agent->>'name'));
+CREATE INDEX idx_uploaded_files_tags ON uploaded_files USING gin (tags);
+CREATE INDEX idx_uploaded_files_transcript_id ON uploaded_files USING btree ((transcription->>'transcriptId'));
+
+-- =============================================
+-- PART 14: MIGRATION SUPPORT
+-- =============================================
+
+-- Schema Version Tracking
+CREATE TABLE IF NOT EXISTS schema_versions (
+    version INTEGER PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Insert current version
+INSERT INTO schema_versions (version, name, description) VALUES 
+(1, 'initial_comprehensive_schema', 'Complete call center QA platform schema with SuperTokens multi-tenancy')
+ON CONFLICT (version) DO NOTHING;
+
+-- Function to migrate data from uploaded_files to normalized structure
+CREATE OR REPLACE FUNCTION migrate_uploaded_file_to_normalized(p_file_id TEXT)
+RETURNS UUID AS $$
+DECLARE
+    v_org_id UUID;
+    v_agent_id UUID;
+    v_customer_id UUID;
+    v_call_id UUID;
+    v_audio_file_id UUID;
+    v_transcription_id UUID;
+    v_analysis_id UUID;
+    v_file_record RECORD;
+BEGIN
+    -- Get the file record
+    SELECT * INTO v_file_record FROM uploaded_files WHERE id = p_file_id;
+    
+    IF v_file_record IS NULL THEN
+        RAISE EXCEPTION 'File not found: %', p_file_id;
+    END IF;
+    
+    -- Get organization from user
+    SELECT organization_id INTO v_org_id 
+    FROM user_profiles 
+    WHERE supertokens_user_id = v_file_record.user_id::CHAR(36)
+    LIMIT 1;
+    
+    IF v_org_id IS NULL THEN
+        RAISE EXCEPTION 'Organization not found for user: %', v_file_record.user_id;
+    END IF;
+    
+    -- Find or create agent
+    SELECT a.id INTO v_agent_id
+    FROM agents a
+    JOIN user_profiles up ON a.user_profile_id = up.id
+    WHERE up.organization_id = v_org_id 
+    AND (up.first_name || ' ' || up.last_name) = (v_file_record.agent->>'name')
+    LIMIT 1;
+    
+    -- Create customer if provided
+    IF v_file_record.customer IS NOT NULL THEN
+        INSERT INTO customers (organization_id, name, metadata)
+        VALUES (v_org_id, v_file_record.customer->>'name', v_file_record.customer)
+        RETURNING id INTO v_customer_id;
+    END IF;
+    
+    -- Create call record
+    INSERT INTO calls (
+        organization_id, agent_id, customer_id, 
+        direction, status, call_type, duration_seconds,
+        metadata, created_at
+    ) VALUES (
+        v_org_id, 
+        COALESCE(v_agent_id, (SELECT id FROM agents a JOIN user_profiles up ON a.user_profile_id = up.id WHERE up.organization_id = v_org_id LIMIT 1)),
+        v_customer_id,
+        'inbound',
+        v_file_record.status,
+        COALESCE((v_file_record.metadata::jsonb)->>'purpose', 'support'),
+        ((v_file_record.file::jsonb)->>'durationSeconds')::INTEGER,
+        v_file_record.metadata::jsonb,
+        v_file_record.uploaded_at
+    ) RETURNING id INTO v_call_id;
+    
+    -- Create audio file record
+    INSERT INTO audio_files (
+        call_id, organization_id, file_name, file_size,
+        mime_type, storage_path, duration_seconds, is_processed
+    ) VALUES (
+        v_call_id, v_org_id, v_file_record.original_name,
+        v_file_record.size, v_file_record.mime_type,
+        v_file_record.file_data,
+        ((v_file_record.file::jsonb)->>'durationSeconds')::NUMERIC,
+        v_file_record.status = 'completed'
+    ) RETURNING id INTO v_audio_file_id;
+    
+    -- Create transcription if exists
+    IF (v_file_record.transcription->>'text') IS NOT NULL AND 
+       LENGTH(v_file_record.transcription->>'text') > 0 THEN
+        
+        INSERT INTO transcriptions (
+            call_id, organization_id, provider, status,
+            confidence_score, word_count, raw_response
+        ) VALUES (
+            v_call_id, v_org_id, 
+            COALESCE(v_file_record.transcription->>'provider', 'assemblyai'),
+            'completed',
+            ((v_file_record.transcription->>'confidence')::NUMERIC / 100),
+            (v_file_record.transcription->>'word_count')::INTEGER,
+            v_file_record.transcription
+        ) RETURNING id INTO v_transcription_id;
+        
+        -- Create transcription segments
+        IF v_file_record.transcription->'segments' IS NOT NULL THEN
+            INSERT INTO transcription_segments (
+                transcription_id, call_id, segment_index,
+                speaker_label, text, start_time, end_time
+            )
+            SELECT 
+                v_transcription_id, v_call_id,
+                (segment->>'segment_index')::INTEGER,
+                CASE 
+                    WHEN segment->>'speaker' = 'Speaker A' THEN 'agent'
+                    WHEN segment->>'speaker' = 'Speaker B' THEN 'customer'
+                    ELSE 'unknown'
+                END,
+                segment->>'text',
+                (segment->>'start')::NUMERIC,
+                (segment->>'end')::NUMERIC
+            FROM jsonb_array_elements(v_file_record.transcription->'segments') AS segment;
+        END IF;
+    END IF;
+    
+    -- Return the created call ID
+    RETURN v_call_id;
+END;
+$$ LANGUAGE plpgsql;
 
 -- =============================================
 -- END OF SCHEMA

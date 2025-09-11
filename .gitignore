@@ -20,3 +20,4 @@ dist/
 build/
 
 test_pipeline/
+fastapi_app.zip

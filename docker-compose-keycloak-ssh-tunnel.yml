@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # SSH Tunnel to AWS RDS via EC2
+  ssh-tunnel:
+    image: alpine:latest
+    container_name: ssh-tunnel-rds
+    command: sh -c "apk add --no-cache openssh-client && cp /ssh/key.pem /tmp/key.pem && chmod 600 /tmp/key.pem && ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -L 0.0.0.0:5432:qa-platform-default.cfiwiw4uqjws.me-central-1.rds.amazonaws.com:5432 -N -i /tmp/key.pem ec2-user@ec2-3-28-194-96.me-central-1.compute.amazonaws.com"
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./ssh:/ssh:ro
+    restart: unless-stopped
+    networks:
+      - keycloak-network
+
+  # Keycloak connecting through SSH tunnel
+  keycloak:
+    image: quay.io/keycloak/keycloak:22.0
+    container_name: keycloak-local
+    command: start-dev --import-realm
+    depends_on:
+      - ssh-tunnel
+    environment:
+      # Database - Connect through SSH tunnel
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://ssh-tunnel:5432/keycloak
+      KC_DB_USERNAME: dbadmin
+      KC_DB_PASSWORD: QAdbadmin_12345
+      
+      # Admin credentials
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: local_12345
+      
+      # Development mode settings
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_HTTP_ENABLED: true
+      KC_HOSTNAME: localhost
+      
+      # Features for multi-tenancy
+      KC_FEATURES: token-exchange,admin-fine-grained-authz,scripts,preview
+      
+      # Database connection tuning
+      KC_DB_POOL_INITIAL_SIZE: 1
+      KC_DB_POOL_MIN_SIZE: 1
+      KC_DB_POOL_MAX_SIZE: 5
+      KC_TRANSACTION_XA_ENABLED: false
+      KC_DB_POOL_ACQUIRE_TIMEOUT: 60
+      
+      # Logging
+      KC_LOG_LEVEL: INFO
+      
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak-data:/opt/keycloak/data
+      - ./realms:/opt/keycloak/data/import
+    restart: unless-stopped
+    networks:
+      - keycloak-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+networks:
+  keycloak-network:
+    driver: bridge

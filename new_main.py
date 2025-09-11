@@ -10,20 +10,16 @@ from sqlalchemy.orm import Session
 import logging
 import sys
 import os
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-
-# Add parent directory to path for absolute imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add parent directory to path for imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi_app.core.config import settings
 from fastapi_app.core.database import check_connection, get_db, set_tenant_context
 from fastapi_app.core.exceptions import BaseAPIException
 
 # Import API routers
-from fastapi_app.api import auth, tenants, organizations, calls, evaluation, users, role_auth, organization_management
+from fastapi_app.api import auth, tenants, organizations, calls, evaluation, users
 from fastapi_app.api.evaluation import analysis_router
 from fastapi_app.api.users import agent_router
 from fastapi_app.api import coaching, command_center, analytics
@@ -49,27 +45,6 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     
-    # Start SSH tunnel if configured (only for PostgreSQL URLs)
-    if settings.use_ssh_tunnel and str(settings.database_url).startswith("postgres"):
-        from fastapi_app.utils.ssh_tunnel import get_tunnel_manager
-        tunnel_mgr = get_tunnel_manager()
-        if not tunnel_mgr.start_tunnel():
-            logger.error("Failed to start SSH tunnel")
-            # In debug mode, do not hard fail so local dev can continue
-            if settings.debug:
-                logger.warning("Continuing without SSH tunnel because debug=True")
-                # Disable further SSH tunnel attempts during this process lifetime
-                try:
-                    from fastapi_app.core.config import settings as _settings
-                    _settings.use_ssh_tunnel = False
-                except Exception:
-                    # Fallback if import aliasing fails
-                    settings.use_ssh_tunnel = False
-            else:
-                raise RuntimeError("SSH tunnel connection failed")
-        else:
-            logger.info("SSH tunnel established")
-    
     # Check database connection
     if not check_connection():
         logger.error("Failed to connect to database")
@@ -82,28 +57,10 @@ async def lifespan(app: FastAPI):
         from fastapi_app.core.database import init_db
         init_db()
         logger.info("Database tables initialized")
-        
-        # Setup default permissions and pricing plans
-        from fastapi_app.core.rbac import setup_default_permissions, seed_pricing_plans
-        db: Session = next(get_db())
-        try:
-            setup_default_permissions(db)
-            seed_pricing_plans(db)
-            logger.info("Default permissions and pricing plans initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize defaults: {e}")
-        finally:
-            db.close()
     
     yield
     
     # Shutdown
-    if settings.use_ssh_tunnel and str(settings.database_url).startswith("postgres"):
-        from fastapi_app.utils.ssh_tunnel import get_tunnel_manager
-        tunnel_mgr = get_tunnel_manager()
-        tunnel_mgr.stop_tunnel()
-        logger.info("SSH tunnel stopped")
-    
     logger.info("Shutting down application")
 
 
@@ -118,7 +75,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -190,8 +147,6 @@ async def api_version():
 
 # Include routers
 app.include_router(auth.router, prefix=f"{settings.api_prefix}")
-app.include_router(role_auth.router, prefix=f"{settings.api_prefix}")
-app.include_router(organization_management.router, prefix=f"{settings.api_prefix}")
 app.include_router(tenants.router, prefix=f"{settings.api_prefix}")
 app.include_router(organizations.router, prefix=f"{settings.api_prefix}")
 app.include_router(users.router, prefix=f"{settings.api_prefix}")
@@ -255,7 +210,7 @@ async def webhook_assemblyai(payload: dict):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "fastapi_app.main:app",
+        "new_main:app",
         host=settings.api_host,
         port=settings.api_port,
         reload=settings.debug,

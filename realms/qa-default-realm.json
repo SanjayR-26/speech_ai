@@ -1,0 +1,184 @@
+{
+  "realm": "qa-default",
+  "enabled": true,
+  "displayName": "QA Platform - Default (Local Testing)",
+  "displayNameHtml": "<b>QA Platform - Local</b>",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "rememberMe": true,
+  "verifyEmail": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "sslRequired": "none",
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "attributes": {
+    "tenantId": "default",
+    "frontendUrl": "http://localhost:3000"
+  },
+  "clients": [
+    {
+      "clientId": "qa-platform-frontend",
+      "name": "QA Platform Frontend (Local)",
+      "description": "Frontend React Application",
+      "rootUrl": "http://localhost:3000",
+      "adminUrl": "http://localhost:3000",
+      "baseUrl": "http://localhost:3000",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:5000/*",
+        "http://localhost:5173/*",
+        "http://127.0.0.1:3000/*",
+        "http://127.0.0.1:5000/*",
+        "http://127.0.0.1:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:5000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5000",
+        "http://127.0.0.1:5173"
+      ],
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ]
+    },
+    {
+      "clientId": "qa-platform-backend",
+      "name": "QA Platform Backend (Local)",
+      "description": "Backend FastAPI Service",
+      "rootUrl": "http://localhost:8000",
+      "adminUrl": "http://localhost:8000",
+      "baseUrl": "http://localhost:8000",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "390301b6-0499-4f72-9ed1-3479e0a6bade",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "redirectUris": [
+        "http://localhost:8000/*",
+        "http://127.0.0.1:8000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",
+        "http://localhost:5000",
+        "http://localhost:5173"
+      ],
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "super_admin",
+        "description": "Super Administrator - Can manage all tenants",
+        "composite": false
+      },
+      {
+        "name": "tenant_admin",
+        "description": "Tenant Administrator",
+        "composite": false
+      },
+      {
+        "name": "manager",
+        "description": "Team Manager",
+        "composite": false
+      },
+      {
+        "name": "agent",
+        "description": "Call Center Agent",
+        "composite": false
+      },
+      {
+        "name": "viewer",
+        "description": "Read-only Access",
+        "composite": false
+      }
+    ]
+  },
+  "defaultRoles": ["viewer"],
+  "requiredCredentials": ["password"],
+  "passwordPolicy": "length(8) and upperCase(1) and lowerCase(1) and digits(1)",
+  "users": [
+    {
+      "username": "admin@qa.local",
+      "email": "admin@qa.local",
+      "firstName": "QA",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["tenant_admin", "super_admin"],
+      "attributes": {
+        "tenant_id": ["default"],
+        "organization_id": ["default-org"]
+      }
+    },
+    {
+      "username": "agent@qa.local",
+      "email": "agent@qa.local",
+      "firstName": "Test",
+      "lastName": "Agent",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "agent123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["agent"],
+      "attributes": {
+        "tenant_id": ["default"],
+        "organization_id": ["default-org"]
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "organizations",
+      "subGroups": [
+        {
+          "name": "default-org",
+          "attributes": {
+            "tenant_id": ["default"],
+            "organization_name": ["Default Organization"]
+          }
+        }
+      ]
+    }
+  ]
+}

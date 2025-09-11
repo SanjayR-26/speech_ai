@@ -1,0 +1,16 @@
+# MINIMAL .ENV FOR QUICK START
+# Copy this to .env and update values
+
+# Essential for startup
+DEBUG=true
+DATABASE_URL="sqlite:///./qa_platform.db"
+
+# Keycloak (update password to match your setup)
+KEYCLOAK_ADMIN_PASSWORD="local_12345"
+
+# API Keys (get from respective services)
+ASSEMBLYAI_API_KEY="your_actual_assemblyai_key"
+OPENAI_API_KEY="your_actual_openai_key"
+
+# Optional - can use defaults
+LOG_LEVEL="DEBUG"

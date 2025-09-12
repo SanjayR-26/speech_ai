@@ -23,8 +23,7 @@ from fastapi_app.core.database import check_connection, get_db, set_tenant_conte
 from fastapi_app.core.exceptions import BaseAPIException
 
 # Import API routers
-from fastapi_app.api import auth, tenants, organizations, calls, evaluation, users, role_auth, organization_management
-from fastapi_app.api.evaluation import analysis_router
+from fastapi_app.api import tenants, organizations, calls, evaluation, users, role_auth, organization_management, webhooks, auth
 from fastapi_app.api.users import agent_router
 from fastapi_app.api import coaching, command_center, analytics
 
@@ -77,6 +76,11 @@ async def lifespan(app: FastAPI):
     
     logger.info("Database connection established")
     
+    # Start transcription worker
+    from fastapi_app.services.transcription_worker import start_transcription_worker
+    await start_transcription_worker()
+    logger.info("Transcription worker started")
+    
     # Initialize database (in production, use migrations)
     if settings.debug:
         from fastapi_app.core.database import init_db
@@ -98,6 +102,11 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
+    # Stop transcription worker
+    from fastapi_app.services.transcription_worker import stop_transcription_worker
+    await stop_transcription_worker()
+    logger.info("Transcription worker stopped")
+    
     if settings.use_ssh_tunnel and str(settings.database_url).startswith("postgres"):
         from fastapi_app.utils.ssh_tunnel import get_tunnel_manager
         tunnel_mgr = get_tunnel_manager()
@@ -189,8 +198,8 @@ async def api_version():
     }
 
 # Include routers
-app.include_router(auth.router, prefix=f"{settings.api_prefix}")
 app.include_router(role_auth.router, prefix=f"{settings.api_prefix}")
+# app.include_router(auth.router, prefix=f"{settings.api_prefix}")
 app.include_router(organization_management.router, prefix=f"{settings.api_prefix}")
 app.include_router(tenants.router, prefix=f"{settings.api_prefix}")
 app.include_router(organizations.router, prefix=f"{settings.api_prefix}")
@@ -198,10 +207,10 @@ app.include_router(users.router, prefix=f"{settings.api_prefix}")
 app.include_router(agent_router, prefix=f"{settings.api_prefix}")
 app.include_router(calls.router, prefix=f"{settings.api_prefix}")
 app.include_router(evaluation.router, prefix=f"{settings.api_prefix}")
-app.include_router(analysis_router, prefix=f"{settings.api_prefix}")
 app.include_router(coaching.router, prefix=f"{settings.api_prefix}")
 app.include_router(command_center.router, prefix=f"{settings.api_prefix}")
 app.include_router(analytics.router, prefix=f"{settings.api_prefix}")
+app.include_router(webhooks.router, prefix=f"{settings.api_prefix}")
 
 # Legacy contact submission endpoint (public)
 @app.post("/api/contact")

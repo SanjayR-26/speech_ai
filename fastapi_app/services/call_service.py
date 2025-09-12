@@ -289,134 +289,207 @@ class CallService(BaseService[CallRepository]):
         return self.repository.search_calls(tenant_id, query, skip=skip, limit=limit)
     
     async def get_call_data_for_api(self, call: Any) -> Dict[str, Any]:
-        """Format call data for API response with QA evaluation"""
+        """Format call data for API response with QA evaluation matching expected UI format"""
         # Get analysis if exists
         analysis = self.analysis_repo.get_by_call(call.id)
         
-        # Build call data response
+        # Build call data response matching expected format
         call_data = {
             "id": str(call.id),
-            "tenant_id": call.tenant_id,
-            "organization_id": str(call.organization_id),
+            "uploadedAt": call.created_at.isoformat(),
             "agent": {
-                "id": str(call.agent.id),
-                "agent_code": call.agent.agent_code,
-                "name": f"{call.agent.user_profile.first_name} {call.agent.user_profile.last_name}"
+                "id": str(call.agent.id) if call.agent else None,
+                "name": f"{call.agent.user_profile.first_name} {call.agent.user_profile.last_name}" if call.agent and call.agent.user_profile else "Unknown Agent"
             },
             "customer": None,
             "file": {
-                "id": str(call.audio_file.id) if call.audio_file else None,
-                "file_name": call.audio_file.file_name if call.audio_file else None,
-                "file_size": call.audio_file.file_size if call.audio_file else None,
-                "mime_type": call.audio_file.mime_type if call.audio_file else None,
-                "duration_seconds": float(call.audio_file.duration_seconds) if call.audio_file and call.audio_file.duration_seconds else None,
-                "created_at": call.audio_file.created_at.isoformat() if call.audio_file else None
+                "originalName": call.audio_file.file_name if call.audio_file else None,
+                "size": call.audio_file.file_size if call.audio_file else None,
+                "mimeType": call.audio_file.mime_type if call.audio_file else None,
+                "durationSeconds": int(call.audio_file.duration_seconds) if call.audio_file and call.audio_file.duration_seconds else None,
+                "language": call.transcription.language_code if call.transcription else None,
+                "sampleRate": call.audio_file.sample_rate if call.audio_file else None,
+                "channels": call.audio_file.channels if call.audio_file else None
             },
             "tags": call.call_metadata.get("tags", []) if call.call_metadata else [],
             "status": call.status,
             "transcription": None,
             "metrics": {},
-            "qa_evaluation": None,
-            "insights": [],
-            "created_at": call.created_at.isoformat(),
-            "updated_at": call.updated_at.isoformat()
+            "debug": None
         }
         
-        # Add customer if exists
+        # Add customer if exists (simplified format)
         if call.customer:
             call_data["customer"] = {
-                "id": str(call.customer.id),
                 "name": call.customer.name,
                 "email": call.customer.email,
                 "phone": call.customer.phone
             }
         
-        # Add transcription if exists
-        if call.transcription:
+        # Build segments array with proper speaker mapping and sentiment
+        segments = []
+        speaker_mapping = None
+        
+        # Get speaker mapping from analysis if available (will be used later)
+        if analysis and hasattr(analysis, 'speaker_mapping') and analysis.speaker_mapping:
+            speaker_mapping = analysis.speaker_mapping
+            
+        # Build full text from segments
+        full_text = ""
+        
+        if call.transcription and call.transcription.segments:
+            for seg in call.transcription.segments:
+                # Build full text
+                if seg.text:
+                    full_text += seg.text + " "
+                    
+                # Use original speaker label from transcription
+                original_speaker = seg.speaker_label or "Unknown"
+                
+                # Apply speaker mapping if available
+                mapped_speaker = original_speaker
+                if speaker_mapping:
+                    # Try direct mapping first
+                    if original_speaker in speaker_mapping:
+                        mapped_speaker = speaker_mapping[original_speaker]
+                    else:
+                        # Try mapping based on speaker patterns (A, B, Speaker A, Speaker B, etc.)
+                        for key, value in speaker_mapping.items():
+                            if (key.lower() in original_speaker.lower() or 
+                                original_speaker.lower() in key.lower()):
+                                mapped_speaker = value
+                                break
+                
+                # Get sentiment from transcription segment if available
+                segment_sentiment = "NEUTRAL"
+                if seg.sentiment:
+                    segment_sentiment = seg.sentiment.upper()
+                
+                segments.append({
+                    "speaker": mapped_speaker,
+                    "text": seg.text or "",
+                    "start": float(seg.start_time) if seg.start_time else 0.0,
+                    "end": float(seg.end_time) if seg.end_time else 0.0,
+                    "confidence": float(seg.speaker_confidence) if seg.speaker_confidence else 0.0,
+                    "sentiment": segment_sentiment,
+                    "overlap": None,
+                    "overlapFrom": None
+                })
+            
+            # Clean up full text
+            full_text = full_text.strip()
+            
             call_data["transcription"] = {
-                "id": str(call.transcription.id),
-                "status": call.transcription.status,
-                "language_code": call.transcription.language_code,
-                "confidence_score": float(call.transcription.confidence_score) if call.transcription.confidence_score else None,
-                "word_count": call.transcription.word_count,
-                "segments": [
-                    {
-                        "segment_index": seg.segment_index,
-                        "speaker_label": seg.speaker_label,
-                        "text": seg.text,
-                        "start_time": float(seg.start_time) if seg.start_time else None,
-                        "end_time": float(seg.end_time) if seg.end_time else None
-                    }
-                    for seg in call.transcription.segments
-                ]
+                "provider": call.transcription.provider or "assemblyai",
+                "transcriptId": call.transcription.provider_transcript_id or str(call.transcription.id),
+                "text": full_text,
+                "segments": segments,
+                "confidence": float(call.transcription.confidence_score) if call.transcription.confidence_score else 0.0,
+                "languageCode": call.transcription.language_code or "en",
+                "summary": analysis.summary if analysis else "",
+                "qa_evaluation": None,  # Will be populated below
+                "chapters": [],
+                "entities": [],
+                "contentSafety": None
             }
         
-        # Add analysis data if exists
+        # Add analysis data if exists (matching expected format)
         if analysis:
-            # Build full QA evaluation object (following memory requirement)
+            # Build criteria array matching expected format
+            criteria = []
+            for score in analysis.scores:
+                criteria.append({
+                    "name": score.criterion.name,
+                    "score": int(score.points_earned) if score.points_earned else 0,
+                    "justification": score.justification or "",
+                    "supporting_segments": []  # Can be enhanced with segment references
+                })
+            
+            # Build insights array
+            insights = []
+            for insight in analysis.insights:
+                insights.append({
+                    "type": insight.insight_type or "improvement",
+                    "segment": {
+                        "speaker": "Agent",  # Can be enhanced
+                        "text": insight.description or "",
+                        "start": 0.0,
+                        "end": 0.0
+                    },
+                    "explanation": insight.description or "",
+                    "improved_response_example": insight.suggested_action or ""
+                })
+            
+            # Build QA evaluation object matching expected format
             qa_evaluation = {
-                "id": str(analysis.id),
-                "score": float(analysis.overall_score) if analysis.overall_score else None,
-                "overall_score": float(analysis.overall_score) if analysis.overall_score else None,
-                "performance_category": analysis.performance_category,
-                "summary": analysis.summary,
-                "speaker_mapping": analysis.speaker_mapping,
-                "agent_label": analysis.agent_label,
-                "evaluation_scores": [
-                    {
-                        "criterion_name": score.criterion.name,
-                        "category": score.criterion.category,
-                        "points_earned": float(score.points_earned),
-                        "max_points": score.max_points,
-                        "percentage": float(score.percentage_score) if score.percentage_score else None,
-                        "justification": score.justification
-                    }
-                    for score in analysis.scores
-                ],
-                "insights": [
-                    {
-                        "type": insight.insight_type,
-                        "category": insight.category,
-                        "title": insight.title,
-                        "description": insight.description,
-                        "severity": insight.severity,
-                        "suggested_action": insight.suggested_action
-                    }
-                    for insight in analysis.insights
-                ],
-                "completed_at": analysis.completed_at.isoformat() if analysis.completed_at else None
+                "criteria": criteria,
+                "insights": insights,
+                "agent_label": analysis.agent_label or "A",
+                "raw_response": "",  # Can store original analysis data as JSON
+                "overall_score": int(analysis.overall_score) if analysis.overall_score else 0,
+                "speaker_mapping": analysis.speaker_mapping or {"A": "Agent", "B": "Customer"},
+                "customer_behavior": analysis.customer_behavior.emotional_state if analysis.customer_behavior else "polite"
             }
             
-            call_data["qa_evaluation"] = qa_evaluation
-            call_data["insights"] = qa_evaluation["insights"]
+            # Apply speaker mapping to segments now that we have QA evaluation
+            if qa_evaluation["speaker_mapping"] and segments:
+                for segment in segments:
+                    original_speaker = segment["speaker"]
+                    # If speaker is still unmapped, try the QA evaluation mapping
+                    if original_speaker in ["Unknown", "Speaker A", "Speaker B", "A", "B"]:
+                        for key, value in qa_evaluation["speaker_mapping"].items():
+                            if (key.lower() in original_speaker.lower() or 
+                                original_speaker.lower() == key.lower()):
+                                segment["speaker"] = value
+                                break
+                                
+            # Update speaker_mapping variable to the QA evaluation mapping for consistency
+            speaker_mapping = qa_evaluation["speaker_mapping"]
             
-            # Build metrics with overallScore backfilled from qa_evaluation
+            # Add QA evaluation to transcription and root level
+            if call_data["transcription"]:
+                call_data["transcription"]["qa_evaluation"] = qa_evaluation
+            
+            # Calculate metrics with proper backfill from qa_evaluation.score
+            word_count = call.transcription.word_count if call.transcription and call.transcription.word_count else 0
+            duration_sec = call.audio_file.duration_seconds if call.audio_file and call.audio_file.duration_seconds else 1
+            
+            # Calculate speaking rates (placeholder logic)
+            agent_talk_time = duration_sec * 0.4  # Assuming 40% agent talk time
+            customer_talk_time = duration_sec * 0.6  # Assuming 60% customer talk time
+            silence_duration = duration_sec * 0.1  # Assuming 10% silence
+            
+            # Safe calculation for speaking rate
+            speaking_rate = 0
+            if word_count and word_count > 0 and duration_sec > 0:
+                speaking_rate = round((word_count / duration_sec) * 60, 2)
+            
             call_data["metrics"] = {
-                "wordCount": call.transcription.word_count if call.transcription else 0,
-                "overallScore": qa_evaluation["overall_score"],  # Backfilled from qa_evaluation
-                "overall_score": qa_evaluation["overall_score"],  # Both camelCase and snake_case
-                "speakingRateWpm": 150,  # Placeholder
-                "clarity": 0.85  # Placeholder
+                "wordCount": word_count,
+                "speakingRateWpm": speaking_rate,
+                "clarity": float(call.transcription.confidence_score) if call.transcription and call.transcription.confidence_score else 0.0,
+                "overallScore": float(qa_evaluation["overall_score"]) if qa_evaluation["overall_score"] else 0.0,
+                "agentTalkTimeSec": round(agent_talk_time, 2),
+                "customerTalkTimeSec": round(customer_talk_time, 2),
+                "silenceDurationSec": round(silence_duration, 2),
+                "sentimentOverall": "NEUTRAL",  # Can be enhanced with sentiment analysis
+                "sentimentBySpeaker": {
+                    "agent": "NEUTRAL",
+                    "customer": "NEUTRAL"
+                }
             }
             
-            # Add customer behavior if exists
-            if analysis.customer_behavior:
-                qa_evaluation["customer_behavior"] = {
-                    "emotional_state": analysis.customer_behavior.emotional_state,
-                    "patience_level": analysis.customer_behavior.patience_level,
-                    "cooperation_level": analysis.customer_behavior.cooperation_level,
-                    "resolution_satisfaction": analysis.customer_behavior.resolution_satisfaction
-                }
+            # Backfill overallScore from qa_evaluation.score when missing (memory requirement)
+            if not call_data["metrics"]["overallScore"] and qa_evaluation["overall_score"]:
+                call_data["metrics"]["overallScore"] = float(qa_evaluation["overall_score"])
         
         # Add sentiment if exists
         if call.sentiment_analysis:
-            if not call_data["qa_evaluation"]:
-                call_data["qa_evaluation"] = {}
-            
-            call_data["qa_evaluation"]["sentiment"] = {
-                "overall": call.sentiment_analysis.overall_sentiment,
-                "agent": call.sentiment_analysis.agent_sentiment,
-                "customer": call.sentiment_analysis.customer_sentiment
+            # Update metrics sentiment data
+            call_data["metrics"]["sentimentOverall"] = call.sentiment_analysis.overall_sentiment or "NEUTRAL"
+            call_data["metrics"]["sentimentBySpeaker"] = {
+                "agent": call.sentiment_analysis.agent_sentiment or "NEUTRAL",
+                "customer": call.sentiment_analysis.customer_sentiment or "NEUTRAL"
             }
         
         return call_data

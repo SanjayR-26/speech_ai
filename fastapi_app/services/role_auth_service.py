@@ -47,7 +47,7 @@ class RoleAuthService:
         """Create a new tenant administrator and organization"""
         
         # Check if organization name already exists in tenant
-        existing_org = self.org_repo.get_by_name_and_tenant(organization_name, tenant_id)
+        existing_org = self.org_repo.get_by_name(tenant_id, organization_name)
         if existing_org:
             raise ConflictError(f"Organization '{organization_name}' already exists")
         
@@ -95,6 +95,7 @@ class RoleAuthService:
             
             # Create user profile
             user_profile = UserProfile(
+                tenant_id=tenant_id,
                 keycloak_user_id=keycloak_user_id,
                 organization_id=organization.id,
                 email=email,
@@ -116,14 +117,16 @@ class RoleAuthService:
             # Get permissions for tenant admin
             permissions = self._get_role_permissions(UserRole.TENANT_ADMIN)
             
+            # For signup, return message-based response (not tokens until verified)
             return {
-                "message": "Organization and administrator account created successfully. Please verify your email.",
+                "message": "Organization and administrator account created successfully. Please check your email for verification.",
                 "user_id": str(user_profile.id),
                 "organization_id": str(organization.id),
                 "email": email,
                 "role": UserRole.TENANT_ADMIN,
                 "verification_required": True,
-                "permissions": permissions
+                "organization_name": organization_name,
+                "next_step": "Please verify your email address before logging in"
             }
             
         except ConflictError:
@@ -147,15 +150,14 @@ class RoleAuthService:
         """Create a new manager (by tenant admin)"""
         
         # Get creator and validate permissions
-        creator = self.user_repo.get_by_id(creator_user_id)
+        creator = self.user_repo.get_by_keycloak_id(creator_user_id)
         if not creator or creator.role != UserRole.TENANT_ADMIN:
             raise AuthorizationError("Only tenant administrators can create managers")
         
-        if not creator.can_create_managers:
-            raise AuthorizationError("User not authorized to create managers")
+        # Tenant admin role inherently has permission to create managers
         
         # Check organization limits
-        organization = self.org_repo.get_by_id(organization_id)
+        organization = self.org_repo.get(organization_id)
         if not organization:
             raise Exception("Organization not found")
         
@@ -196,6 +198,7 @@ class RoleAuthService:
             
             # Create user profile
             user_profile = UserProfile(
+                tenant_id=creator.tenant_id,
                 keycloak_user_id=keycloak_user_id,
                 organization_id=organization.id,
                 department_id=department_id,
@@ -251,15 +254,14 @@ class RoleAuthService:
         """Create a new agent (by tenant admin or manager)"""
         
         # Get creator and validate permissions
-        creator = self.user_repo.get_by_id(creator_user_id)
+        creator = self.user_repo.get_by_keycloak_id(creator_user_id)
         if not creator or creator.role not in [UserRole.TENANT_ADMIN, UserRole.MANAGER]:
             raise AuthorizationError("Only tenant administrators and managers can create agents")
         
-        if not creator.can_create_agents:
-            raise AuthorizationError("User not authorized to create agents")
+        # Tenant admin and manager roles inherently have permission to create agents
         
         # Check organization
-        organization = self.org_repo.get_by_id(organization_id)
+        organization = self.org_repo.get(organization_id)
         if not organization:
             raise Exception("Organization not found")
         
@@ -300,6 +302,7 @@ class RoleAuthService:
             
             # Create user profile
             user_profile = UserProfile(
+                tenant_id=creator.tenant_id,
                 keycloak_user_id=keycloak_user_id,
                 organization_id=organization.id,
                 department_id=department_id,

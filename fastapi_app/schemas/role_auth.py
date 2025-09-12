@@ -85,6 +85,18 @@ class CreateUserRequest(BaseModel):
     team_id: Optional[str] = None
 
 
+class TenantAdminSignupResponse(BaseModel):
+    """Response after tenant admin signup - message-based until email verified"""
+    message: str
+    user_id: str
+    email: str
+    role: UserRole
+    organization_id: str
+    organization_name: str
+    verification_required: bool = True
+    next_step: str
+
+
 class UserCreatedResponse(BaseModel):
     """Response after creating a user"""
     message: str

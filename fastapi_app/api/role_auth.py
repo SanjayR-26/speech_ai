@@ -7,17 +7,20 @@ from typing import Dict, Any
 
 from ..api.deps import get_db, get_current_user
 from ..services.role_auth_service import RoleAuthService
+from ..services.auth_service import AuthService
+from ..core.config import settings
 from ..schemas.role_auth import (
     TenantAdminSignupRequest, ManagerSignupRequest, AgentSignupRequest,
     RoleBasedLoginRequest, RoleBasedAuthResponse, CreateUserRequest,
-    UserCreatedResponse, UserRole
+    UserCreatedResponse, UserRole, TenantAdminSignupResponse
 )
+from ..schemas.auth import RefreshTokenRequest, TokenResponse
 from ..core.exceptions import ConflictError, AuthorizationError
 
 router = APIRouter(prefix="/role-auth", tags=["Role-Based Authentication"])
 
 
-@router.post("/tenant-admin/signup", response_model=RoleBasedAuthResponse)
+@router.post("/tenant-admin/signup", response_model=TenantAdminSignupResponse)
 async def tenant_admin_signup(
     request: TenantAdminSignupRequest,
     db: Session = Depends(get_db)
@@ -47,6 +50,57 @@ async def tenant_admin_signup(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def role_auth_refresh_token(
+    request: RefreshTokenRequest,
+    db: Session = Depends(get_db)
+):
+    """Public: Refresh access token (role-based auth namespace).
+
+    This mirrors /api/auth/refresh so frontends using role-based flows
+    can call a consistent path. Authentication is intentionally not
+    required here; the refresh_token is validated by Keycloak.
+    """
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.refresh_token(request.refresh_token)
+        return TokenResponse(
+            access_token=result["access_token"],
+            refresh_token=result["refresh_token"],
+            token_type="Bearer",
+            expires_in=result["expires_in"],
+            refresh_expires_in=result.get("refresh_expires_in", 86400)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+
+
+@router.post("/forgot-password")
+async def forgot_password(request: Dict[str, Any], db: Session = Depends(get_db)):
+    """Trigger a password reset email for the provided email address.
+
+    This endpoint is public and always returns a generic success message to avoid
+    leaking whether an email exists. The email is sent by Keycloak using
+    EXECUTE_ACTIONS_EMAIL with UPDATE_PASSWORD.
+    """
+    email = (request or {}).get("email")
+    if not email or not isinstance(email, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email is required"
+        )
+
+    auth_service = AuthService(db)
+    # Use default configured realm
+    await auth_service.send_password_reset_email(email=email, realm_name=settings.keycloak_realm)
+
+    # Always return success to prevent user enumeration
+    return {"message": "If the email exists, a password reset link has been sent."}
 
 
 @router.post("/manager/signup", response_model=UserCreatedResponse)

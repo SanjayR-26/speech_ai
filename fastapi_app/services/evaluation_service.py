@@ -428,6 +428,7 @@ class CallAnalysisService(BaseService[CallAnalysisRepository]):
             "model_version": "gpt-4o-mini",
             "total_points_earned": total_earned,
             "total_max_points": total_max,
+            "overall_score": score_percentage,
             "performance_category": performance_category,
             "summary": result.get("summary", ""),
             "speaker_mapping": result.get("speaker_mapping", {}),

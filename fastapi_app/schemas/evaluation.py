@@ -13,6 +13,7 @@ class EvaluationCategory(str, Enum):
     TECHNICAL = "technical"
     COMPLIANCE = "compliance"
     PROCESS = "process"
+    PROBLEM_SOLVING = "problem_solving"
 
 
 class InsightSeverity(str, Enum):

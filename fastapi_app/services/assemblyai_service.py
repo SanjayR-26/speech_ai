@@ -69,8 +69,16 @@ class AssemblyAIService:
         # Segments (utterances)
         segments = []
         for utt in data.get("utterances", []) or []:
+            # Map speaker to simple A/B labels for consistency
+            speaker_raw = utt.get('speaker')
+            if speaker_raw is not None:
+                # AssemblyAI uses 'A', 'B', 'C', etc.
+                speaker_label = str(speaker_raw).upper()
+            else:
+                speaker_label = None
+                
             segment = TranscriptionSegment(
-                speaker=f"Speaker {utt.get('speaker')}" if utt.get("speaker") is not None else None,
+                speaker=speaker_label,
                 text=utt.get("text", ""),
                 start=(utt.get("start") or 0) / 1000,
                 end=(utt.get("end") or 0) / 1000,

@@ -118,6 +118,7 @@ class TranscriptionSegment(BaseModel, TenantMixin):
     start_time = Column(Numeric(10, 3))
     end_time = Column(Numeric(10, 3))
     word_confidence = Column(JSON)
+    sentiment = Column(String(20))  # POSITIVE, NEGATIVE, NEUTRAL
     segment_metadata = Column(JSON, default=dict)
     
     # Relationships

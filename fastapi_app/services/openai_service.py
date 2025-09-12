@@ -1,7 +1,8 @@
 from openai import AsyncOpenAI
 from typing import Dict, Any, List, Optional
 from config import get_settings
-from models import Sentiment, TranscriptionSegment
+from models import Sentiment, TranscriptionSegment, EvaluationCriteria
+from database import get_db
 import json
 import logging
 import re
@@ -242,6 +243,8 @@ class OpenAIService:
         self,
         transcript: str,
         metrics: Dict[str, Any],
+        organization_id: str,
+        tenant_id: str,
         utterances: Optional[List[Dict[str, Any]]] = None,
         model: str = "gpt-4o",
         max_transcript_chars: int = 12000,
@@ -272,28 +275,60 @@ class OpenAIService:
         # Prefer utterances from input; otherwise leave empty list
         utterances = utterances or []
 
+        # Fetch evaluation criteria from database (organization-specific or fallback to shared defaults)
+        db = next(get_db())
+        try:
+            # First try organization-specific criteria
+            org_criteria = db.query(EvaluationCriteria).filter(
+                EvaluationCriteria.organization_id == organization_id,
+                EvaluationCriteria.is_active == True,
+                EvaluationCriteria.tenant_id == tenant_id
+            ).all()
+            
+            if org_criteria:
+                # Use organization-specific criteria
+                criteria_list = [{"name": c.name, "max_points": c.max_points, "description": c.description} for c in org_criteria]
+                logger.info(f"Using {len(criteria_list)} organization-specific criteria for org {organization_id}")
+            else:
+                # Fall back to shared default criteria
+                from models import DefaultEvaluationCriteria
+                default_criteria = db.query(DefaultEvaluationCriteria).filter(
+                    DefaultEvaluationCriteria.is_system == True
+                ).all()
+                
+                if default_criteria:
+                    criteria_list = [{"name": c.name, "max_points": c.default_points, "description": c.description} for c in default_criteria]
+                    logger.info(f"Using {len(criteria_list)} shared default criteria for org {organization_id}")
+                else:
+                    # Fallback to hardcoded if database is empty
+                    criteria_list = [
+                        {"name": "Professionalism & Tone", "max_points": 20, "description": "Evaluates agent's professional demeanor, politeness, and appropriate tone throughout the call"},
+                        {"name": "Active Listening & Empathy", "max_points": 20, "description": "Assesses agent's ability to listen actively to customer concerns and demonstrate empathy"},
+                        {"name": "Problem Diagnosis & Resolution Accuracy", "max_points": 20, "description": "Measures effectiveness in accurately diagnosing and resolving customer issues"},
+                        {"name": "Policy/Process Adherence", "max_points": 20, "description": "Assesses compliance with company policies, procedures, and established processes"},
+                        {"name": "Communication Clarity & Structure", "max_points": 20, "description": "Evaluates clarity, structure, and effectiveness of agent's explanations and instructions"}
+                    ]
+                    logger.warning(f"No criteria found in database for org {organization_id}, using hardcoded defaults")
+        finally:
+            db.close()
+
         system_prompt = (
             "You are a senior Quality Assurance (QA) reviewer for customer support calls. "
             "Infer which speaker is the Agent vs Customer from the conversation content. "
             "Evaluate ONLY the Agent's performance once inferred. Be strict, objective, and evidence-based. "
-            "Provide scores strictly according to the rubric."
+            "Provide scores strictly according to the rubric below."
         )
 
-        # Five criteria, 0-20 each
-        rubric = [
-            "Professionalism & Tone",
-            "Active Listening & Empathy",
-            "Problem Diagnosis & Resolution Accuracy",
-            "Policy/Process Adherence",
-            "Communication Clarity & Structure",
-        ]
+        # Build rubric from database criteria
+        rubric = [f"{c['name']} (0-{c['max_points']} points): {c['description']}" for c in criteria_list]
+        max_total_score = sum(c['max_points'] for c in criteria_list)
 
         output_contract = {
-            "overall_score": "Sum of the five criteria (0-100).",
+            "overall_score": f"Sum of all criteria (0-{max_total_score}).",
             "criteria": [
                 {
-                    "name": "string (one of the 5 rubric names)",
-                    "score": "integer 0-20",
+                    "name": f"string (one of the {len(criteria_list)} rubric names)",
+                    "score": f"integer 0-{criteria_list[0]['max_points'] if criteria_list else 20}",
                     "justification": "1-3 sentences referencing concrete parts of the call",
                     "supporting_segments": [
                         {

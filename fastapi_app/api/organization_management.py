@@ -58,7 +58,7 @@ async def get_organization_details(
         )
     
     org_repo = OrganizationRepository(db)
-    organization = org_repo.get_by_id(current_user["organization_id"])
+    organization = org_repo.get(current_user["organization_id"])
     
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -94,7 +94,7 @@ async def update_organization(
         )
     
     org_repo = OrganizationRepository(db)
-    organization = org_repo.get_by_id(current_user["organization_id"])
+    organization = org_repo.get(current_user["organization_id"])
     
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -197,7 +197,7 @@ async def get_organization_stats(
         )
     
     org_repo = OrganizationRepository(db)
-    organization = org_repo.get_by_id(current_user["organization_id"])
+    organization = org_repo.get(current_user["organization_id"])
     
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -306,7 +306,7 @@ async def update_user_status(
         )
     
     user_repo = UserRepository(db)
-    target_user = user_repo.get_by_id(user_id)
+    target_user = user_repo.get(user_id)
     
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")

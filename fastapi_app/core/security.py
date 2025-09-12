@@ -166,7 +166,8 @@ async def get_current_user(
             permissions = RBACManager.DEFAULT_PERMISSIONS.get(user_role, [])
         
         current_user = {
-            "id": str(user_id),
+            "id": str(user_id),  # Keycloak user ID
+            "internal_id": str(user_profile.id) if user_profile else None,  # Internal DB ID
             "email": email,
             "role": user_role,  # Primary role from user profile
             "roles": roles,     # Keycloak roles (for backward compatibility)

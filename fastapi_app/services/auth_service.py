@@ -307,6 +307,61 @@ class AuthService(BaseService[UserRepository]):
         # This would typically be done through Keycloak Admin API
         # For now, return not implemented
         raise NotImplementedError("Password change through API not yet implemented")
+
+    async def send_password_reset_email(self, email: str, realm_name: Optional[str] = None) -> None:
+        """Trigger Keycloak to send a password reset email (UPDATE_PASSWORD) for the given user email.
+
+        For security, this method should not leak whether the email exists. Callers should always
+        return a generic success message regardless of outcome.
+        """
+        realm = realm_name or settings.keycloak_realm
+        try:
+            admin_token = await self._get_keycloak_admin_token()
+            headers = {
+                "Authorization": f"Bearer {admin_token}",
+                "Content-Type": "application/json"
+            }
+
+            # 1) Lookup user by email
+            search_url = f"{settings.keycloak_url}/admin/realms/{realm}/users"
+            params = {"email": email, "exact": "true"}
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(search_url, headers=headers, params=params)
+                if resp.status_code != 200:
+                    logger.warning(f"Keycloak email lookup failed: {resp.status_code} - {resp.text}")
+                    return  # Do not leak info
+
+                users = resp.json() or []
+                user = None
+                # Prefer exact email match (in case exact param not honored by server)
+                for u in users:
+                    if u.get("email", "").lower() == email.lower():
+                        user = u
+                        break
+                if not user and users:
+                    user = users[0]
+                if not user:
+                    # No such user; do not leak
+                    return
+
+                user_id = user.get("id")
+                if not user_id:
+                    return
+
+                # 2) Execute actions email with UPDATE_PASSWORD
+                exec_url = f"{settings.keycloak_url}/admin/realms/{realm}/users/{user_id}/execute-actions-email"
+                payload = ["UPDATE_PASSWORD"]
+                exec_resp = await client.put(exec_url, headers=headers, json=payload)
+                if exec_resp.status_code not in (204, 202):
+                    logger.warning(
+                        f"Failed to send password reset email: {exec_resp.status_code} - {exec_resp.text}"
+                    )
+                    # Still do not raise to avoid leaking
+                    return
+        except Exception as e:
+            logger.error(f"Error sending password reset email: {e}", exc_info=True)
+            # Intentionally swallow exceptions to avoid user enumeration
+            return
     
     async def _create_keycloak_user(self, realm_name: str, user_data: Dict[str, Any]) -> str:
         """Create user in Keycloak and return user ID"""
@@ -350,7 +405,7 @@ class AuthService(BaseService[UserRepository]):
                 "Content-Type": "application/json"
             }
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.put(url, headers=headers)
                 
                 if response.status_code == 204:
@@ -373,14 +428,22 @@ class AuthService(BaseService[UserRepository]):
             "grant_type": "password"
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, data=data)
-            
-            if response.status_code == 200:
-                token_data = response.json()
-                return token_data["access_token"]
-            else:
-                raise Exception(f"Failed to get admin token: {response.text}")
+        try:
+            # Set timeout for Keycloak connections (10 seconds)
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, data=data)
+                
+                if response.status_code == 200:
+                    token_data = response.json()
+                    return token_data["access_token"]
+                else:
+                    raise Exception(f"Keycloak admin token request failed: {response.status_code} - {response.text}")
+        except httpx.TimeoutException:
+            raise Exception(f"Keycloak connection timeout. Is Keycloak running at {settings.keycloak_url}?")
+        except httpx.ConnectError:
+            raise Exception(f"Cannot connect to Keycloak at {settings.keycloak_url}. Please check if Keycloak is running.")
+        except Exception as e:
+            raise Exception(f"Keycloak admin token error: {str(e)}")
 
     async def check_permission(self, user: Dict[str, Any], permission: str) -> bool:
         """Check if user has permission"""

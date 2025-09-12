@@ -26,6 +26,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/api/auth/refresh",
         "/api/role-auth/tenant-admin/signup",
         "/api/role-auth/login",
+        "/api/role-auth/forgot-password",
         "/api/contact",
         "/api/webhooks"
     ]

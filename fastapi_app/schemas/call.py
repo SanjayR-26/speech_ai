@@ -227,6 +227,39 @@ class SpeakerCorrectionRequest(BaseModel):
     corrections: List[SpeakerCorrection]
 
 
+# Bulk upload schemas
+class BulkUploadResult(BaseModel):
+    success: bool
+    call_id: Optional[str] = None
+    filename: str
+    message: Optional[str] = None
+    error: Optional[str] = None
+    estimated_completion_time: Optional[int] = None
+    index: int
+
+
+class BulkUploadResponse(BaseModel):
+    success: bool
+    total_files: int
+    successful_uploads: int
+    failed_uploads: int
+    processing_mode: str  # "serial" or "parallel"
+    results: List[BulkUploadResult]
+    message: str
+
+
+class BulkUploadStatus(BaseModel):
+    batch_id: str
+    status: str  # "pending", "processing", "completed", "failed"
+    total_files: int
+    processed_files: int
+    successful_uploads: int
+    failed_uploads: int
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    message: Optional[str] = None
+
+
 # List response
 class CallListResponse(BaseModel):
     calls: List[CallData]

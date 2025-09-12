@@ -36,6 +36,7 @@ async def get_default_criteria(
             description=d.description,
             category=d.category,
             max_points=d.default_points,
+            default_criterion_id=None,
             is_active=True,
             is_custom=False,
             created_at=d.created_at,
@@ -68,7 +69,24 @@ async def list_criteria(
         category=category
     )
     
-    return criteria
+    # Convert to schema format with string UUIDs
+    return [
+        EvaluationCriterion(
+            id=str(c.id),
+            tenant_id=c.tenant_id,
+            organization_id=str(c.organization_id),
+            name=c.name,
+            description=c.description,
+            category=c.category,
+            max_points=c.max_points,
+            default_criterion_id=str(c.default_criterion_id) if c.default_criterion_id else None,
+            is_active=c.is_active,
+            is_custom=c.is_custom,
+            created_at=c.created_at,
+            updated_at=c.updated_at
+        )
+        for c in criteria
+    ]
 
 
 @router.post("", response_model=EvaluationCriterion)

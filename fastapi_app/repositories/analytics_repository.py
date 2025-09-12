@@ -16,6 +16,7 @@ from ..models.analytics import (
 from ..models.call import Call
 from ..models.evaluation import CallAnalysis
 from ..core.exceptions import NotFoundError
+from ..models.user import Agent, UserProfile
 
 
 class RealtimeQATrackerRepository(BaseRepository[RealtimeQATracker]):
@@ -204,10 +205,23 @@ class AgentPerformanceMetricRepository(BaseRepository[AgentPerformanceMetric]):
             CallAnalysis.status == "completed"
         ).all()
         
-        if analyses:
-            avg_score = sum(a.overall_score or 0 for a in analyses) / len(analyses)
-        else:
-            avg_score = None
+        # Compute average over valid scores; fallback if overall_score is missing
+        valid_scores: list[float] = []
+        for a in analyses:
+            score = None
+            if getattr(a, "overall_score", None) is not None:
+                score = float(a.overall_score)
+            else:
+                earned = getattr(a, "total_points_earned", None)
+                max_pts = getattr(a, "total_max_points", None)
+                if earned is not None and max_pts:
+                    try:
+                        score = float(earned) / float(max_pts) * 100.0
+                    except Exception:
+                        score = None
+            if score is not None:
+                valid_scores.append(score)
+        avg_score = (sum(valid_scores) / len(valid_scores)) if valid_scores else None
         
         return {
             "total_calls": total_calls,
@@ -314,7 +328,19 @@ class AnalyticsRepository:
         
         avg_score = None
         if analyses:
-            scores = [a.overall_score for a in analyses if a.overall_score is not None]
+            # Build list with fallback computation when overall_score is missing
+            scores = []
+            for a in analyses:
+                if a.overall_score is not None:
+                    scores.append(float(a.overall_score))
+                else:
+                    earned = getattr(a, "total_points_earned", None)
+                    max_pts = getattr(a, "total_max_points", None)
+                    if earned is not None and max_pts:
+                        try:
+                            scores.append(float(earned) / float(max_pts) * 100.0)
+                        except Exception:
+                            pass
             if scores:
                 avg_score = sum(scores) / len(scores)
         

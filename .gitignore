@@ -21,3 +21,56 @@ build/
 
 test_pipeline/
 fastapi_app.zip
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore virtual environment folders
+env/
+venv/
+.env
+.env.local
+
+
+# Ignore local configuration files
+*.local
+
+# Ignore coverage reports
+htmlcov/
+
+# Ignore profiling data
+.prof
+
+# Ignore PyInstaller generated files
+*.spec
+
+# Ignore macOS specific files
+.DS_Store
+
+# Ignore Python specific ignores
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.env
+*.venv
+.env.local
+.idea/
+.vscode/
+*.db
+*.sqlite3
+*.log
+*.pytest_cache/
+*.coverage
+*.mypy_cache/
+*.pylint.d/
+dist/
+build/
+
+# Ignore test artifacts
+test_pipeline/
+fastapi_app.zip
+uploads/
+secrets/
+ssh/

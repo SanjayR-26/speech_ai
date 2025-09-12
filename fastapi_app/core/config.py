@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     api_port: int = 8000
     api_host: str = "0.0.0.0"
+    api_base_url: str = "http://localhost:8000"
     
     # Database
     database_url: str = "postgresql://qa_app:your_password@localhost:5432/qa_platform"
@@ -42,7 +43,7 @@ class Settings(BaseSettings):
     
     # OpenAI
     openai_api_key: str = "your_openai_api_key"
-    openai_model: str = "gpt-4o-mini"
+    openai_model: str = "gpt-5-mini-2025-08-07"
     openai_max_tokens: int = 4000
     
     # Storage

@@ -51,10 +51,7 @@ class CallAnalysis(BaseModel, TimestampMixin, TenantMixin):
     model_version = Column(String(50))
     total_points_earned = Column(Numeric(5, 2))
     total_max_points = Column(Integer)
-    overall_score = Column(
-        Numeric(5, 2),
-        Computed("CASE WHEN total_max_points > 0 THEN (total_points_earned / total_max_points * 100) ELSE 0 END")
-    )
+    overall_score = Column(Numeric(5, 2))  # Direct score from OpenAI
     performance_category = Column(String(50))
     summary = Column(Text)
     speaker_mapping = Column(JSON)

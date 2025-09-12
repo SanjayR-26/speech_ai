@@ -76,7 +76,7 @@ class AssemblyAIClient:
             "summary_type": "bullets",
             "entity_detection": True,
             "sentiment_analysis": True,
-            "auto_chapters": True,
+            "auto_chapters": False,
             "content_safety": True,
             "iab_categories": True,
             "disfluencies": False,
@@ -92,6 +92,10 @@ class AssemblyAIClient:
         if language_code:
             request_data["language_code"] = language_code
         
+        # Debug logging
+        logger.info(f"AssemblyAI request data: {request_data}")
+        logger.info(f"AssemblyAI headers: {self.headers}")
+        
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
@@ -106,11 +110,18 @@ class AssemblyAIClient:
                 return data["id"]
                 
             except httpx.HTTPStatusError as e:
+                error_details = {}
+                try:
+                    error_details = e.response.json()
+                except:
+                    error_details = {"raw_response": e.response.text}
+                
                 logger.error(f"AssemblyAI transcription start failed: {e}")
+                logger.error(f"Response body: {error_details}")
                 raise ExternalServiceError(
                     "AssemblyAI",
                     f"Transcription start failed: {e.response.status_code}",
-                    {"status_code": e.response.status_code}
+                    {"status_code": e.response.status_code, "error_details": error_details}
                 )
             except Exception as e:
                 logger.error(f"AssemblyAI transcription error: {e}")
